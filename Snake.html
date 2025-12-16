@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Baker's Snake Game!</title>
+
+<style>
+    body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        color: white;
+        background: linear-gradient(
+            270deg,
+            red, orange, yellow, green, cyan, blue, purple
+        );
+        background-size: 1400% 1400%;
+        animation: rainbowBG 15s ease infinite;
+    }
+
+    @keyframes rainbowBG {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    a.home-link {
+        display: inline-block;
+        margin-top: 15px;
+        color: white;
+        text-decoration: underline;
+        font-weight: bold;
+    }
+
+    h1 {
+        margin-top: 10px;
+        text-shadow: 2px 2px 5px black;
+    }
+
+    .scoreboard, .highscore {
+        font-size: 18px;
+        margin: 5px;
+    }
+
+    button {
+        padding: 10px 20px;
+        font-size: 16px;
+        margin: 5px;
+        cursor: pointer;
+        border: none;
+        border-radius: 6px;
+        background-color: black;
+        color: white;
+    }
+
+    #game-board {
+        width: 400px;
+        height: 400px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(20, 1fr);
+        grid-template-rows: repeat(20, 1fr);
+        background-color: rgba(0, 0, 0, 0.8);
+        border: 3px solid white;
+    }
+
+    .snake {
+        border-radius: 4px;
+    }
+
+    .fruit {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        background: radial-gradient(circle, red 60%, green 61%);
+        border-radius: 50%;
+    }
+
+    .leaderboard {
+        margin-top: 20px;
+        padding-bottom: 20px;
+    }
+
+    .leaderboard ul {
+        list-style: none;
+        padding: 0;
+    }
+</style>
+</head>
+
+<body>
+
+<a href="scratch.html" class="home-link">Return to Home Page</a>
+
+<h1>Baker’s Snake Game!</h1>
+
+<div class="scoreboard">
+    Score: <span id="score">0</span>
+</div>
+
+<div class="highscore">
+    High Score: <span id="highscore">0</span>
+</div>
+
+<button id="start-btn">Start</button>
+<button id="pause-btn" disabled>Pause</button>
+<button id="restart-btn" disabled>Restart</button>
+
+<div id="game-board"></div>
+
+<div class="leaderboard">
+    <h2>Leaderboard (Top 5)</h2>
+    <ul id="leaderboard-list"></ul>
+</div>
+
+<script>
+const board = document.getElementById("game-board");
+const scoreDisplay = document.getElementById("score");
+const highScoreDisplay = document.getElementById("highscore");
+const leaderboardList = document.getElementById("leaderboard-list");
+
+const startBtn = document.getElementById("start-btn");
+const pauseBtn = document.getElementById("pause-btn");
+const restartBtn = document.getElementById("restart-btn");
+
+const boardSize = 20;
+const colors = ["red","orange","yellow","green","cyan","blue","purple","pink"];
+
+let snake, direction, fruit, score;
+let gameInterval = null;
+let paused = false;
+let speed = 160;
+
+/* 🔊 SOUND */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(freq, duration) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = freq;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+/* 💾 LEADERBOARD STORAGE */
+let leaderboard = JSON.parse(localStorage.getItem("snakeLeaderboard")) || [];
+
+function updateLeaderboard() {
+    leaderboardList.innerHTML = "";
+    leaderboard.slice(0, 5).forEach(entry => {
+        const li = document.createElement("li");
+        li.textContent = `${entry.name} – ${entry.score}`;
+        leaderboardList.appendChild(li);
+    });
+}
+
+updateLeaderboard();
+
+/* ▶️ START */
+function startGame() {
+    snake = [{ x: 10, y: 10 }];
+    direction = { x: 1, y: 0 };
+    score = 0;
+    speed = 160;
+    paused = false;
+
+    scoreDisplay.textContent = score;
+    fruit = spawnFruit();
+
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+    restartBtn.disabled = false;
+
+    clearInterval(gameInterval);
+    draw();
+    gameInterval = setInterval(gameLoop, speed);
+}
+
+function restartGame() {
+    clearInterval(gameInterval);
+    startGame();
+}
+
+/* ⏸️ PAUSE */
+function togglePause() {
+    paused = !paused;
+    pauseBtn.textContent = paused ? "Resume" : "Pause";
+
+    if (paused) clearInterval(gameInterval);
+    else gameInterval = setInterval(gameLoop, speed);
+}
+
+/* 🔁 LOOP */
+function gameLoop() {
+    moveSnake();
+    draw();
+}
+
+/* 🎨 DRAW */
+function draw() {
+    board.innerHTML = "";
+
+    snake.forEach((seg, i) => {
+        const s = document.createElement("div");
+        s.className = "snake";
+        s.style.gridColumnStart = seg.x;
+        s.style.gridRowStart = seg.y;
+        s.style.backgroundColor = colors[i % colors.length];
+        board.appendChild(s);
+    });
+
+    const f = document.createElement("div");
+    f.className = "fruit";
+    f.style.gridColumnStart = fruit.x;
+    f.style.gridRowStart = fruit.y;
+    f.textContent = "🍉";
+    board.appendChild(f);
+}
+
+/* 🐍 MOVE */
+function moveSnake() {
+    const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+
+    if (
+        head.x < 1 || head.x > boardSize ||
+        head.y < 1 || head.y > boardSize ||
+        snake.some(s => s.x === head.x && s.y === head.y)
+    ) {
+        endGame();
+        return;
+    }
+
+    snake.unshift(head);
+
+    if (head.x === fruit.x && head.y === fruit.y) {
+        score++;
+        scoreDisplay.textContent = score;
+        playSound(600, 0.1);
+
+        speed = Math.max(60, speed - 5);
+        clearInterval(gameInterval);
+        gameInterval = setInterval(gameLoop, speed);
+
+        fruit = spawnFruit();
+    } else {
+        snake.pop();
+    }
+}
+
+/* 🛑 END GAME */
+function endGame() {
+    clearInterval(gameInterval);
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+
+    playSound(150, 0.5);
+
+    const name = prompt("Game Over! Enter your name:");
+    if (name) {
+        leaderboard.push({ name, score });
+        leaderboard.sort((a, b) => b.score - a.score);
+        leaderboard = leaderboard.slice(0, 5);
+        localStorage.setItem("snakeLeaderboard", JSON.stringify(leaderboard));
+        updateLeaderboard();
+    }
+
+    highScoreDisplay.textContent = leaderboard[0]?.score || score;
+}
+
+/* 🍉 FRUIT */
+function spawnFruit() {
+    let pos;
+    do {
+        pos = {
+            x: Math.floor(Math.random() * boardSize) + 1,
+            y: Math.floor(Math.random() * boardSize) + 1
+        };
+    } while (snake?.some(s => s.x === pos.x && s.y === pos.y));
+    return pos;
+}
+
+/* 🎮 CONTROLS */
+document.addEventListener("keydown", e => {
+    if (paused) return;
+
+    if (e.key === "ArrowUp" && direction.y === 0) direction = { x: 0, y: -1 };
+    if (e.key === "ArrowDown" && direction.y === 0) direction = { x: 0, y: 1 };
+    if (e.key === "ArrowLeft" && direction.x === 0) direction = { x: -1, y: 0 };
+    if (e.key === "ArrowRight" && direction.x === 0) direction = { x: 1, y: 0 };
+});
+
+/* BUTTONS */
+startBtn.onclick = startGame;
+restartBtn.onclick = restartGame;
+pauseBtn.onclick = togglePause;
+</script>
+
+</body>
+</html>
+
+
+
+
+
